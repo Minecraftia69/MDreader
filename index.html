@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Markdown 文档浏览器 | GitHub Pages</title>
+    <!-- 引入 marked.js 用于解析 Markdown，安全且高效，兼容 GitHub Pages 环境 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 引入 highlight.js 用于代码高亮 (可选，提升代码块显示效果) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- 添加基础样式，使布局美观且适应移动端 -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: #f6f8fa;
+            color: #24292f;
+            line-height: 1.5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 整体容器 */
+        .app {
+            display: flex;
+            height: 100vh;
+            width: 100%;
+            transition: all 0.2s ease;
+        }
+
+        /* 左侧文件列表区域 — 初始状态 (宽一些，展示完整列表) */
+        .sidebar {
+            background-color: #ffffff;
+            border-right: 1px solid #d0d7de;
+            display: flex;
+            flex-direction: column;
+            transition: width 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            overflow: hidden;
+            box-shadow: 1px 0 5px rgba(0,0,0,0.02);
+            z-index: 10;
+        }
+
+        /* 默认展开模式 (列表完整显示) */
+        .sidebar.expanded {
+            width: 280px;
+        }
+
+        /* 缩小模式 (竖排小菜单) */
+        .sidebar.collapsed {
+            width: 70px;
+        }
+
+        /* 列表内容容器 */
+        .file-list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 8px;
+        }
+
+        /* 展开模式下的列表样式 */
+        .sidebar.expanded .file-list {
+            display: block;
+        }
+
+        /* 收缩模式下的列表样式 — 图标+竖排紧凑 */
+        .sidebar.collapsed .file-list {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* 公共文件项样式 */
+        .file-item {
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        /* 展开模式文件项 */
+        .sidebar.expanded .file-item {
+            padding: 10px 12px;
+            margin-bottom: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1f2328;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* 收缩模式文件项 — 竖排图标样式 */
+        .sidebar.collapsed .file-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 0;
+            width: 100%;
+            text-align: center;
+            font-size: 12px;
+            gap: 6px;
+        }
+
+        /* 图标公共 */
+        .file-icon {
+            font-size: 1.3rem;
+            display: inline-block;
+        }
+
+        .sidebar.collapsed .file-icon {
+            font-size: 1.8rem;
+        }
+
+        .file-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sidebar.collapsed .file-name {
+            white-space: normal;
+            word-break: break-word;
+            max-width: 60px;
+            font-size: 10px;
+            line-height: 1.3;
+        }
+
+        /* 悬停效果 */
+        .file-item:hover {
+            background-color: #f0f3f8;
+        }
+
+        /* 选中的文件高亮 */
+        .file-item.active {
+            background-color: #ddf4ff;
+            color: #0969da;
+            font-weight: 600;
+        }
+
+        /* 头部 (收缩/展开按钮 & 标题) */
+        .sidebar-header {
+            padding: 16px 12px;
+            border-bottom: 1px solid #eaeef2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar.expanded .sidebar-header h3 {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: #57606a;
+        }
+
+        .sidebar.collapsed .sidebar-header h3 {
+            display: none;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            padding: 4px 8px;
+            border-radius: 6px;
+            color: #57606a;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .toggle-btn:hover {
+            background-color: #eaeef2;
+        }
+
+        /* 右侧主内容区 */
+        .main-content {
+            flex: 1;
+            background: #ffffff;
+            overflow-y: auto;
+            padding: 2rem 2rem 3rem 2rem;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        /* markdown 渲染样式 (类似GitHub风格) */
+        .markdown-body {
+            max-width: 980px;
+            margin: 0 auto;
+            font-size: 16px;
+        }
+
+        .markdown-body h1, .markdown-body h2 {
+            border-bottom: 1px solid #d0d7de;
+            padding-bottom: 0.3em;
+        }
+
+        .markdown-body pre {
+            background-color: #f6f8fa;
+            border-radius: 6px;
+            padding: 16px;
+            overflow: auto;
+        }
+
+        .markdown-body code {
+            font-family: 'SF Mono', Monaco, Consolas, monospace;
+            background-color: rgba(175,184,193,0.2);
+            padding: 0.2em 0.4em;
+            border-radius: 6px;
+        }
+
+        .markdown-body img {
+            max-width: 100%;
+        }
+
+        .loading-placeholder, .error-placeholder, .welcome-placeholder {
+            text-align: center;
+            margin-top: 80px;
+            color: #6e7781;
+        }
+
+        .error-placeholder {
+            color: #cf222e;
+        }
+
+        /* 响应式: 移动端时如果收缩太窄可做微调 */
+        @media (max-width: 640px) {
+            .sidebar.expanded {
+                width: 240px;
+            }
+            .main-content {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <div class="sidebar expanded" id="sidebar">
+        <div class="sidebar-header">
+            <h3>📄 文档列表</h3>
+            <button class="toggle-btn" id="toggleSidebarBtn" title="收缩/展开菜单">◀</button>
+        </div>
+        <div class="file-list-container">
+            <div id="fileList" class="file-list">
+                <!-- 动态加载 .md 文件列表 -->
+                <div class="loading-files">加载列表中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="main-content" id="mainContent">
+        <div class="welcome-placeholder" id="welcomeMsg">
+            <span>📖 欢迎使用 Markdown 浏览器</span><br>
+            <span style="font-size: 14px;">点击左侧任意 .md 文件，将在右侧优雅渲染内容。</span>
+        </div>
+        <div id="markdownRender" class="markdown-body"></div>
+    </div>
+</div>
+
+<script>
+    // 获取 DOM 元素
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggleSidebarBtn');
+    const fileListContainer = document.getElementById('fileList');
+    const markdownRenderDiv = document.getElementById('markdownRender');
+    const welcomeMsgDiv = document.getElementById('welcomeMsg');
+
+    // 存储获取到的 .md 文件列表
+    let mdFiles = [];
+    // 当前激活的文件名
+    let currentFile = null;
+
+    // 配置 marked 使用高亮
+    if (typeof marked !== 'undefined') {
+        // 设置 marked 选项 (支持代码高亮)
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    try {
+                        return hljs.highlight(code, { language: lang }).value;
+                    } catch (err) {
+                        console.warn("highlight error", err);
+                    }
+                }
+                return code;
+            },
+            breaks: true,   // 支持换行转 <br>
+            gfm: true       // 支持 GitHub 风格 Markdown
+        });
+    }
+
+    /**
+     * 获取当前目录下所有 .md 文件
+     * 由于 GitHub Pages 是静态托管，无法直接通过脚本读取目录列表。
+     * 常用策略：前端通过请求一个预先构建的 index.json 或通过 GitHub API (需要仓库开启issues?)
+     * 但为了纯静态且无需任何额外构建步骤，最可靠的方法是:
+     * 1. 使用 GitHub API 获取仓库内容（需要知道当前仓库路径和分支），但要求公开仓库且用户可能不希望暴露 token。
+     * 2. 更简单且无需任何后端：手动生成文件列表不可取。
+     * 3. 智能扫描: 由于无法扫描本地目录，最佳体验且 100% 适配 GitHub Pages 的方案:
+     *    前端尝试通过 fetch 请求已知可能的 .md 文件? 无法提前知道文件名。
+     * 为了解决真正动态列出 .md 文件，本方案采用 “基于目录清单请求约定”：若您仓库根目录下有一个 files.json 或者
+     * 通过 .md 文件约定。为了开箱即用且无需额外配置，我们实现自动发现机制:
+     * 原理: 因为 HTML 页面不能遍历文件夹，但我们可以尝试预置一个文档列表的获取方式。
+     * 为了满足需求“先显示列表列出同目录下所有.md文件”，最优雅且用户友好的方式是:
+     * 允许用户提供一个简单的 markdown 清单，或者使用 fetch 尝试常见的文件名列表?
+     * 真实场景: 在 GitHub Pages 上无法列出目录，但可以借助 .git 树? 不方便。
+     * 更可靠的方案: 提供一个简单的“自动扫描”思路 —— 其实做不到，但我们可以创建一个辅助 json 数据文件，
+     * 但这里为了完全符合要求，我实现一个自动收集机制: 事先定义可配置的默认 md 文件，
+     * 并提供手动添加或者通过 fetch 请求一个固定的 "manifest.json" 来获取真实文件列表。
+     * 但为了让用户使用简单，我们设计一个灵活方式: 页面加载时，尝试请求一个由用户自己维护的 "md-list.json" 文件，
+     * 如果该文件存在则读取其中的文件名列表; 如果不存在，则回退到显示默认样例并且提示用户如何配置。
+     * 同时提供一种更直接的方法: 用户可以把所有 md 文件放在同目录，然后我们在代码里硬编码一个基础列表
+     * 但违背动态获取。最终最佳实践: 由于 GitHub Pages 的特性，最稳健的方案是“约定一个目录索引文件”。
+     * 所以本实现会尝试获取 `md-manifest.json` 或者通过 GitHub API (不依赖 token 限制) 获取当前仓库的文件树。
+     *
+     * 但是我为了完全满足您的要求，并避免复杂配置，提供混合模式：
+     * 1. 默认尝试调用 GitHub API (公共仓库可用，无需鉴权但有速率限制) 获取当前仓库根目录下的 .md 文件。
+     * 2. 如果获取失败(非github环境或API限制)，提示用户创建一个 `md-list.json` 来列举文件，同时保留手动演示数据。
+     *
+     * 因为本脚本会运行在任意GitHub Pages站点，动态获取同目录 md 文件列表 需要使用 API.
+     * 我们自动解析当前页面的 URL 路径，推导出仓库信息。完美兼容 GitHub Pages。
+     *
+     * 实现细节: 从当前脚本的路径推导出仓库的API endpoint。
+     */
+    async function fetchMdFilesFromGitHubAPI() {
+        // 获取当前页面的完整URL路径
+        const currentUrl = window.location.href;
+        let apiUrl = null;
+        let repoFullName = null;
+        let branch = null;
+        let dirPath = '';
+
+        try {
+            // 解析 GitHub Pages 托管格式: 用户名.github.io/仓库名/ 或 自定义域名？
+            // 如果是标准 pages: https://<user>.github.io/<repo>/ 或者 根域名直接为项目站点.
+            // 更可靠: 使用 window.location.pathname 获取当前相对路径
+            const pathParts = window.location.pathname.split('/').filter(p => p.length > 0);
+            // 典型场景: 如果访问 https://user.github.io/repo/ 则 pathParts = ['repo']
+            // 如果访问 https://user.github.io/ 则根目录项目站点 pathParts = []
+            // 我们需要获取 .md 文件相对于仓库根目录的路径(当前html所在目录)
+            // 获取当前 html 所在目录: location.pathname 去掉最后一部分 (如 index.html 或当前文件名)
+            let basePath = window.location.pathname;
+            if (basePath.endsWith('/')) {
+                // 已经是目录
+                dirPath = basePath;
+            } else {
+                // 可能包含文件名，去除最后一个斜杠后的部分
+                const lastSlash = basePath.lastIndexOf('/');
+                if (lastSlash >= 0) {
+                    dirPath = basePath.substring(0, lastSlash + 1);
+                } else {
+                    dirPath = '/';
+                }
+            }
+            // 推算出 GitHub 仓库信息: 对于 pages 站点，可以从 host 获取
+            const host = window.location.hostname;
+            if (host.includes('github.io')) {
+                let repoName = '';
+                const hostParts = host.split('.');
+                const userName = hostParts[0];
+                // 如果 path 第一段是仓库名
+                const cleanPath = dirPath.replace(/^\//, '').replace(/\/$/, '');
+                const firstSegment = cleanPath.split('/')[0];
+                if (firstSegment && firstSegment !== '') {
+                    repoName = firstSegment;
+                    // 子目录情况，剩余路径作为目录前缀
+                    let subDir = cleanPath.substring(repoName.length).replace(/^\//, '');
+                    dirPath = subDir ? subDir + '/' : '';
+                } else {
+                    repoName = `${userName}.github.io`;  // 用户组织站点
+                    dirPath = cleanPath ? cleanPath + '/' : '';
+                }
+                repoFullName = `${userName}/${repoName}`;
+                branch = 'main'; // 通常 pages 部署分支可能是 main 或 gh-pages，可自动检测
+                // 尝试获取分支: 简单使用main，如果不存在后面可以尝试master
+                // 更好的尝试分支逻辑见后续
+                apiUrl = `https://api.github.com/repos/${repoFullName}/contents/${dirPath}?ref=${branch}`;
+            } else {
+                // 自定义域名情况无法推导仓库，返回null
+                console.warn("非 github.io 域名，无法自动获取列表，将使用手动清单模式");
+                return null;
+            }
+        } catch (e) {
+            console.error("解析仓库信息失败", e);
+            return null;
+        }
+
+        if (!apiUrl) return null;
+
+        // 尝试 fetch API，首次使用 main 分支
+        try {
+            let response = await fetch(apiUrl);
+            if (!response.ok && branch === 'main') {
+                // 尝试 master 分支
+                branch = 'master';
+                const masterApi = `https://api.github.com/repos/${repoFullName}/contents/${dirPath}?ref=${branch}`;
+                response = await fetch(masterApi);
+            }
+            if (!response.ok) {
+                console.warn("GitHub API 请求失败，状态码", response.status);
+                return null;
+            }
+            const files = await response.json();
+            if (Array.isArray(files)) {
+                const markdownFiles = files.filter(file => file.name && file.name.endsWith('.md') && file.type === 'file');
+                const fileNames = markdownFiles.map(file => file.name);
+                // 同时存储下载 URL 映射，用于后续直接通过 raw 获取内容
+                const fileUrlMap = new Map();
+                for (const file of markdownFiles) {
+                    // 使用 raw 下载地址
+                    const rawUrl = `https://raw.githubusercontent.com/${repoFullName}/${branch}/${dirPath}${encodeURIComponent(file.name)}`;
+                    fileUrlMap.set(file.name, rawUrl);
+                }
+                return { fileNames, fileUrlMap };
+            }
+            return null;
+        } catch (err) {
+            console.error("调用GitHub API出错", err);
+            return null;
+        }
+    }
+
+    // 备选方案：读取本地 md-list.json 文件（用户可自行创建）
+    async function fetchFromManifest() {
+        try {
+            const res = await fetch('md-list.json');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.files && Array.isArray(data.files)) {
+                    const fileNames = data.files.filter(f => f.endsWith('.md'));
+                    const fileUrlMap = new Map();
+                    for (const name of fileNames) {
+                        // 直接用相对路径获取 .md 文件
+                        fileUrlMap.set(name, name);
+                    }
+                    return { fileNames, fileUrlMap };
+                }
+            }
+        } catch (e) { /* 忽略 */ }
+        return null;
+    }
+
+    // 备备: 模拟演示数据（当无法获取时提供默认示例，并显示提示）
+    function getDemoFiles() {
+        const demoList = ['example.md', 'getting-started.md', '关于本工具.md'];
+        const fileUrlMap = new Map();
+        // 注意这些文件实际不存在时点击会404，但我们动态创建演示内容？
+        // 为了友好，将demo内容内嵌生成或提示创建文件。真正使用中建议用户添加真实md文件。
+        // 这里提供内嵌生成方法：如果fetch失败，点击时检测如果文件不存在则展示创建指南
+        for (const name of demoList) {
+            fileUrlMap.set(name, name);
+        }
+        return { fileNames: demoList, fileUrlMap, isDemo: true };
+    }
+
+    // 渲染文件列表UI
+    function renderFileList(fileNames, activeFileName, isCollapsed) {
+        if (!fileListContainer) return;
+        if (!fileNames.length) {
+            fileListContainer.innerHTML = '<div class="error-placeholder" style="padding: 1rem;">未找到 .md 文件，请确保同目录下存在 .md 文件 或 配置 md-list.json</div>';
+            return;
+        }
+        const ul = document.createElement('div');
+        ul.className = 'file-list-items';
+        for (let name of fileNames) {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            if (activeFileName === name) item.classList.add('active');
+            // 添加图标和文件名
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'file-icon';
+            iconSpan.textContent = '📄';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'file-name';
+            nameSpan.textContent = name;
+            item.appendChild(iconSpan);
+            item.appendChild(nameSpan);
+            item.addEventListener('click', (function(fileName) {
+                return function() { loadAndRenderMarkdown(fileName); };
+            })(name));
+            ul.appendChild(item);
+        }
+        fileListContainer.innerHTML = '';
+        fileListContainer.appendChild(ul);
+    }
+
+    // 全局存储文件URL映射和是否演示模式
+    let fileUrlMapping = new Map();
+    let isDemoMode = false;
+
+    // 加载md并渲染
+    async function loadAndRenderMarkdown(fileName) {
+        if (!fileName) return;
+        currentFile = fileName;
+        // 高亮当前激活项
+        if (fileListContainer) {
+            const items = fileListContainer.querySelectorAll('.file-item');
+            items.forEach(item => {
+                const nameSpan = item.querySelector('.file-name');
+                if (nameSpan && nameSpan.textContent === fileName) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+        // 隐藏欢迎语，显示loading
+        welcomeMsgDiv.style.display = 'none';
+        markdownRenderDiv.innerHTML = '<div class="loading-placeholder">📥 加载文档中...</div>';
+        let rawUrl = fileUrlMapping.get(fileName);
+        if (!rawUrl && !isDemoMode) {
+            // 备选尝试相对路径直接获取
+            rawUrl = fileName;
+        }
+        if (!rawUrl) rawUrl = fileName;
+        try {
+            const response = await fetch(rawUrl);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const mdText = await response.text();
+            // 使用 marked 解析
+            let htmlContent = '';
+            if (typeof marked !== 'undefined') {
+                htmlContent = marked.parse(mdText);
+            } else {
+                htmlContent = `<pre>${escapeHtml(mdText)}</pre>`;
+            }
+            markdownRenderDiv.innerHTML = htmlContent;
+            // 高亮代码块
+            if (typeof hljs !== 'undefined') {
+                document.querySelectorAll('.markdown-body pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+        } catch (err) {
+            console.error(err);
+            let errorMsg = `无法加载 ${fileName}。`;
+            if (isDemoMode) {
+                errorMsg += ` 当前为演示模式，请创建真实的 .md 文件或提供 md-list.json 清单。确保 ${fileName} 存在于同目录。`;
+            } else {
+                errorMsg += ` 请确保文件存在且路径正确，若使用 GitHub API 获取列表但 raw 文件无法访问请检查分支。`;
+            }
+            markdownRenderDiv.innerHTML = `<div class="error-placeholder">⚠️ ${escapeHtml(errorMsg)}</div>`;
+        }
+    }
+
+    // 辅助函数
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // 初始化获取文件列表
+    async function initFileList() {
+        fileListContainer.innerHTML = '<div class="loading-files">🔍 获取 .md 文件列表...</div>';
+        let result = null;
+        // 优先尝试 github api
+        result = await fetchMdFilesFromGitHubAPI();
+        if (!result) {
+            result = await fetchFromManifest();
+        }
+        if (!result) {
+            // 演示模式数据
+            result = getDemoFiles();
+            isDemoMode = true;
+        } else {
+            isDemoMode = false;
+        }
+        if (result && result.fileNames) {
+            mdFiles = result.fileNames;
+            fileUrlMapping = result.fileUrlMap || new Map();
+            // 补充确保映射，如果没有映射则使用相对路径
+            for (const f of mdFiles) {
+                if (!fileUrlMapping.has(f)) {
+                    fileUrlMapping.set(f, f);
+                }
+            }
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            renderFileList(mdFiles, currentFile, isCollapsed);
+            if (mdFiles.length > 0 && !currentFile) {
+                // 默认加载第一个文件
+                loadAndRenderMarkdown(mdFiles[0]);
+            } else if (currentFile && mdFiles.includes(currentFile)) {
+                loadAndRenderMarkdown(currentFile);
+            }
+        } else {
+            fileListContainer.innerHTML = '<div class="error-placeholder">无法获取文件列表，请创建 md-list.json 或确保 GitHub API 可用。</div>';
+        }
+    }
+
+    // 切换收缩/展开逻辑
+    function toggleSidebar() {
+        const isExpanded = sidebar.classList.contains('expanded');
+        if (isExpanded) {
+            sidebar.classList.remove('expanded');
+            sidebar.classList.add('collapsed');
+            toggleBtn.innerHTML = '▶';
+        } else {
+            sidebar.classList.remove('collapsed');
+            sidebar.classList.add('expanded');
+            toggleBtn.innerHTML = '◀';
+        }
+        // 重新渲染列表以适配不同的显示样式
+        if (mdFiles.length) {
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            renderFileList(mdFiles, currentFile, isCollapsed);
+        }
+    }
+
+    // 绑定事件
+    toggleBtn.addEventListener('click', toggleSidebar);
+
+    // 启动应用
+    initFileList();
+</script>
+</body>
+</html>
